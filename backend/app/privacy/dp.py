@@ -14,12 +14,14 @@ from __future__ import annotations
 import math
 import random
 import threading
+import time
 
 from ..config import (
     EPSILON_DEFAULT,
     ZONE_EPSILON_BUDGET,
     COUNT_SENSITIVITY,
     K_ANON_THRESHOLD,
+    EPSILON_REGEN_PER_SEC,
 )
 
 
@@ -38,30 +40,49 @@ def laplace_noise(scale: float) -> float:
 
 
 class PrivacyBudget:
-    """Tracks epsilon spent per zone. Once a zone exhausts its budget within
-    the current window, we refuse further queries about it."""
+    """Tracks epsilon spent per zone, with time-based regeneration.
 
-    def __init__(self, total: float = ZONE_EPSILON_BUDGET):
+    Each query spends epsilon; the spent amount leaks back toward zero at
+    `regen_per_sec`. So the budget visibly drops under querying and recovers
+    when querying eases. If a burst of queries exhausts it, further queries are
+    refused until it regenerates — the "we refuse to over-query our citizens"
+    guarantee, now demonstrable live.
+    """
+
+    def __init__(self, total: float = ZONE_EPSILON_BUDGET,
+                 regen_per_sec: float = EPSILON_REGEN_PER_SEC):
         self._total = total
+        self._regen = regen_per_sec
         self._spent: dict[str, float] = {}
+        self._last: dict[str, float] = {}
         self._lock = threading.Lock()
 
+    def _decayed_spend(self, zone: str) -> float:
+        now = time.time()
+        last = self._last.get(zone, now)
+        spent = max(0.0, self._spent.get(zone, 0.0) - (now - last) * self._regen)
+        self._spent[zone] = spent
+        self._last[zone] = now
+        return spent
+
     def remaining(self, zone: str) -> float:
-        return self._total - self._spent.get(zone, 0.0)
+        with self._lock:
+            return round(self._total - self._decayed_spend(zone), 2)
 
     def try_spend(self, zone: str, epsilon: float) -> bool:
         with self._lock:
-            if self._spent.get(zone, 0.0) + epsilon > self._total:
+            spent = self._decayed_spend(zone)
+            if spent + epsilon > self._total:
                 return False
-            self._spent[zone] = self._spent.get(zone, 0.0) + epsilon
+            self._spent[zone] = spent + epsilon
             return True
 
     def reset(self, zone: str | None = None) -> None:
         with self._lock:
             if zone is None:
-                self._spent.clear()
+                self._spent.clear(); self._last.clear()
             else:
-                self._spent.pop(zone, None)
+                self._spent.pop(zone, None); self._last.pop(zone, None)
 
 
 class DPEngine:

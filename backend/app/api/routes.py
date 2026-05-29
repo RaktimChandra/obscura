@@ -33,7 +33,7 @@ def stats(zone: str = "zone-A", query: str = "count"):
         return schemas.StatResponse(value=0, epsilon_remaining=0,
                                     suppressed=True, query=query, zone=zone)
     true_count = recent[-1]["head_count"]
-    res = dp_engine.private_count(true_count, group_size=true_count, zone=zone)
+    res = dp_engine.private_count(true_count, group_size=true_count, zone=zone, epsilon=0.4)
     return schemas.StatResponse(query=query, **res)
 
 

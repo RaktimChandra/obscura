@@ -11,6 +11,8 @@ EPSILON_DEFAULT = 1.0
 # to answer any more queries about it. This is the "we refuse to over-query
 # our own citizens" guarantee.
 ZONE_EPSILON_BUDGET = 10.0
+# Budget leaks back toward zero at this rate, so it recovers between queries.
+EPSILON_REGEN_PER_SEC = 0.5
 # Sensitivity of a counting query: one person can change a count by at most 1.
 COUNT_SENSITIVITY = 1.0
 # k-anonymity: never release a statistic about a group smaller than this.
