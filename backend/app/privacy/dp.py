@@ -1,0 +1,113 @@
+"""Differential privacy engine.
+
+Releases aggregate statistics with calibrated Laplace noise so that the
+presence or absence of any single individual is statistically undetectable,
+while the aggregate stays useful.
+
+Core guarantee (epsilon-DP): for a counting query with sensitivity 1,
+adding noise drawn from Laplace(0, 1/epsilon) means two datasets differing in
+one person produce output distributions within a factor e^epsilon of each
+other. No observer can confidently tell whether you were in the frame.
+"""
+from __future__ import annotations
+
+import math
+import random
+import threading
+
+from ..config import (
+    EPSILON_DEFAULT,
+    ZONE_EPSILON_BUDGET,
+    COUNT_SENSITIVITY,
+    K_ANON_THRESHOLD,
+)
+
+
+def laplace_noise(scale: float) -> float:
+    """Sample Laplace(0, scale) via inverse-CDF transform.
+
+    Draw u uniformly on [-0.5, 0.5); the inverse CDF of the Laplace
+    distribution is  -scale * sign(u) * ln(1 - 2|u|).
+    """
+    u = random.random() - 0.5            # [-0.5, 0.5)
+    abs_u = abs(u)
+    # Guard the log against the (vanishingly rare) tail at |u| -> 0.5.
+    inner = max(1.0 - 2.0 * abs_u, 1e-12)
+    sign = 1.0 if u >= 0 else -1.0
+    return -scale * sign * math.log(inner)
+
+
+class PrivacyBudget:
+    """Tracks epsilon spent per zone. Once a zone exhausts its budget within
+    the current window, we refuse further queries about it."""
+
+    def __init__(self, total: float = ZONE_EPSILON_BUDGET):
+        self._total = total
+        self._spent: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def remaining(self, zone: str) -> float:
+        return self._total - self._spent.get(zone, 0.0)
+
+    def try_spend(self, zone: str, epsilon: float) -> bool:
+        with self._lock:
+            if self._spent.get(zone, 0.0) + epsilon > self._total:
+                return False
+            self._spent[zone] = self._spent.get(zone, 0.0) + epsilon
+            return True
+
+    def reset(self, zone: str | None = None) -> None:
+        with self._lock:
+            if zone is None:
+                self._spent.clear()
+            else:
+                self._spent.pop(zone, None)
+
+
+class DPEngine:
+    """Differentially private query interface over aggregate counts."""
+
+    def __init__(self, budget: PrivacyBudget | None = None):
+        self.budget = budget or PrivacyBudget()
+
+    def private_count(
+        self,
+        true_value: float,
+        group_size: int,
+        zone: str,
+        epsilon: float = EPSILON_DEFAULT,
+        sensitivity: float = COUNT_SENSITIVITY,
+    ) -> dict:
+        """Return a noised count, or a suppressed/refused result.
+
+        Two protections stack:
+          1. k-anonymity: groups smaller than the threshold are suppressed.
+          2. epsilon-DP: Laplace noise scaled by sensitivity / epsilon.
+        """
+        # k-anonymity suppression
+        if group_size < K_ANON_THRESHOLD:
+            return {
+                "value": 0.0,
+                "epsilon_remaining": self.budget.remaining(zone),
+                "suppressed": True,
+                "zone": zone,
+            }
+
+        # Budget enforcement
+        if not self.budget.try_spend(zone, epsilon):
+            return {
+                "value": 0.0,
+                "epsilon_remaining": self.budget.remaining(zone),
+                "suppressed": True,   # treated as suppressed: budget exhausted
+                "zone": zone,
+            }
+
+        noisy = true_value + laplace_noise(sensitivity / epsilon)
+        # Counts can't be negative; clamp and round for display honesty.
+        noisy = max(0.0, noisy)
+        return {
+            "value": round(noisy, 2),
+            "epsilon_remaining": self.budget.remaining(zone),
+            "suppressed": False,
+            "zone": zone,
+        }
