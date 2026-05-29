@@ -1,0 +1,13 @@
+# Core (required to run the backend + demo pipeline)
+fastapi
+uvicorn[standard]
+pydantic>=2
+pycryptodome
+httpx            # for the test client
+
+# AI / perception (install on the machine that runs the live camera demo)
+# The backend boots fine without these — the synthetic feed covers dev.
+opencv-python
+mediapipe
+scikit-learn
+numpy
