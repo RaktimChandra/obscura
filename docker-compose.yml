@@ -1,0 +1,9 @@
+# One command to run the whole app:  docker compose up --build
+# Then open http://localhost:8000
+services:
+  obscura:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OBSCURA_SERVE_FRONTEND=1

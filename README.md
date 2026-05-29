@@ -58,6 +58,29 @@ Restart uvicorn and click **Use real feed** in the dashboard's reveal panel.
 
 ---
 
+## Run the tests
+```bash
+cd backend
+pip install pytest
+pytest -q
+```
+12 tests cover the DP mechanism + budget, Shamir reconstruction, AES sealing,
+the tamper-evident audit chain, and a full API smoke test.
+
+## Deploy (optional)
+One command, whole app on one port:
+```bash
+docker compose up --build      # then open http://localhost:8000
+```
+Or push to Render / Railway / Fly.io — they build the Dockerfile automatically.
+See `DEPLOY.md` for details.
+
+## Quick run (local dev)
+- Windows: double-click `run.bat`
+- Mac/Linux: `./run.sh`
+(Starts backend on 8080 + frontend on 5173. The backend port is set in
+`frontend/vite.config.js`.)
+
 ## What's real (and tested)
 - DP engine: Laplace mean≈0, stdev≈1.41, ε budget decrements, k-anonymity suppresses.
 - Shamir 2-of-3 over the 521-bit prime field; any 2 shares reconstruct, 1 cannot.

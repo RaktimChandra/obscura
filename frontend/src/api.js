@@ -1,6 +1,6 @@
 // All backend calls go through here. In dev, Vite proxies /api -> :8000.
 // If you serve the built app elsewhere, set VITE_API_BASE.
-const BASE = import.meta.env.VITE_API_BASE ?? '/api'
+const BASE = import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? '/api' : '')
 
 async function j(path, opts) {
   const r = await fetch(BASE + path, opts)

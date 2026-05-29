@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: { // dev proxy so the app calls the backend without CORS friction
-      '/api': { target: 'http://localhost:8080', changeOrigin: true,
+      '/api': { target: 'http://localhost:8000', changeOrigin: true,
                 rewrite: p => p.replace(/^\/api/, '') }
     }
   }

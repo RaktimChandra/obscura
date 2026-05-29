@@ -60,8 +60,8 @@ def create_app() -> FastAPI:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
-    @app.get("/")
-    def root():
+    @app.get("/healthz")
+    def healthz():
         return {"name": "OBSCURA", "status": "ok",
                 "tagline": "See the threat. Not the person."}
 
@@ -91,6 +91,15 @@ def create_app() -> FastAPI:
         """Convenience: the sealed demo identities and their holder shares,
         so the frontend can drive the break-glass demo."""
         return getattr(app.state, "demo", {})
+
+    # Production: serve the built frontend from the same origin (one container).
+    # Off by default so local dev (Vite on 5173) is untouched.
+    import os as _os
+    if _os.environ.get("OBSCURA_SERVE_FRONTEND") == "1":
+        from fastapi.staticfiles import StaticFiles
+        _static = _os.path.join(_os.path.dirname(__file__), "static")
+        if _os.path.isdir(_static):
+            app.mount("/", StaticFiles(directory=_static, html=True), name="spa")
 
     return app
 
