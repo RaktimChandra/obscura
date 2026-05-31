@@ -10,6 +10,10 @@
 
 Built for **Codorra 2026** — theme: *Mass Surveillance vs Public Safety* · Team **VORTEX**
 
+### 🔴 [Live demo → obscura-tr8o.onrender.com](https://obscura-tr8o.onrender.com/)
+
+*(Free-tier hosting — first load after idle takes ~30–50s to wake. Runs the synthetic feed; no camera on a server.)*
+
 </div>
 
 ---
