@@ -1,93 +1,151 @@
+<div align="center">
+
 # OBSCURA
 
-**See the threat. Not the person.**
+### See the threat. Not the person.
 
-Public-safety surveillance that is *mathematically incapable* of becoming mass
-surveillance. OBSCURA gives authorities the safety signal they need — crowd
-density, surges, anomalies — while making individual identification structurally
-impossible. When exceptional access is genuinely required, it takes a quorum of
-independent parties to unlock a single identity, and every unlock is written to
-a public, tamper-evident ledger.
+**Public-safety monitoring that is *mathematically incapable* of becoming mass surveillance.**
 
-Built for **Codorra 2026** — theme: *Mass Surveillance vs Public Safety*.
-Team **VORTEX** — Raktim Chandra · Nipun Dewangan · Juhi Hai · Pronov Mazumdar.
+[Five Guarantees](#the-five-guarantees) · [Quick Start](#quick-start) · [Architecture](#architecture) · [Tests](#tests) · [Deploy](#deploy)
+
+Built for **Codorra 2026** — theme: *Mass Surveillance vs Public Safety* · Team **VORTEX**
+
+</div>
 
 ---
+
+## The problem
+
+Modern public-safety systems — CCTV, crowd analytics, facial recognition — work by
+collecting identity. That is exactly what erodes privacy. Cities want safety;
+citizens fear surveillance; today you are forced to pick one.
+
+**OBSCURA refuses to choose.** It delivers the safety signal authorities actually
+need — crowd density, surges, anomalies — while making the identification of any
+individual *structurally impossible*. And on the rare occasion lawful access is
+required, no single party can unlock an identity, and every unlock is permanently
+and publicly recorded.
 
 ## The five guarantees
-1. **Anonymize at source** — faces/plates redacted at the edge before anything is stored.
-2. **Differential privacy** — released counts carry Laplace noise; each zone has an ε budget we refuse to exceed; small groups are suppressed (k-anonymity).
-3. **Threshold cryptography** — identities are AES-sealed; the key is split via Shamir 2-of-3 across police, an oversight officer, and the judiciary. No one party can un-blur anyone.
-4. **Tamper-evident audit** — every unlock is appended to a SHA-256 hash chain anyone can verify; editing the past breaks the chain.
-5. **Measured privacy** — a Privacy Auditor runs adversarial re-identification on our own redacted output and fails; that failure rate is the published Privacy Score.
 
-Plus: an **autoencoder Safety Brain** (anomaly detection on movement, not identity)
-and a **DP-bound NL assistant** that can only ever read privacy-protected aggregates.
+| # | Guarantee | How |
+|---|-----------|-----|
+| 1 | **Anonymize at source** | Faces are detected and redacted (pixelate + blur) at the edge *before* any feature is computed or stored. Raw pixels never leave the anonymizer. |
+| 2 | **Differential privacy** | Released statistics carry calibrated Laplace noise; each zone holds a privacy budget that regenerates over time and *refuses* to over-report; groups below *k* are suppressed (k-anonymity). |
+| 3 | **Threshold cryptography** | Identities are AES-GCM sealed; the key is split via **Shamir 2-of-3** across police, an oversight officer, and the judiciary. No single party can de-anonymize anyone. |
+| 4 | **Tamper-evident audit** | Every unlock is appended to a SHA-256 hash chain. Altering any past entry breaks the chain — anyone can verify the published head. |
+| 5 | **Measured privacy** | A red-team **Privacy Auditor** continuously attacks our *own* redacted output, attempting re-identification. Its failure rate is published live as a Privacy Score. We don't claim privacy — we measure an attacker's inability to break it. |
 
----
+Plus a **Safety Brain** (autoencoder anomaly detection on movement, never identity)
+and a **DP-bound assistant** that can answer questions only from the
+differentially-private aggregate layer — structurally unable to return a person.
 
-## Quick start (two terminals)
+## Architecture
 
-### 1 — Backend
+```
+                          Live video feed
+                                │
+                       Edge anonymization
+            (detect + redact faces; derive count, density,
+             motion, pose — raw pixels discarded)
+                        ╱                ╲
+            anonymous features        sealed identity crop
+                   │                         │
+        ┌──────────┴─────────┐      AES-GCM seal; key split via
+        │                    │      Shamir 2-of-3, key discarded
+   Differential          Safety Brain               │
+     privacy          (autoencoder anomaly    Accountable break-glass
+  (Laplace + budget     detection)             (t-of-n quorum unlock,
+   + k-anonymity)           │                   every unlock audited)
+        │                   │                         │
+   Authority dashboard  Threat alerts        Tamper-evident public ledger
+
+   Privacy Auditor (red-team): attacks the redacted output, fails,
+   and publishes the failure rate as the live Privacy Score.
+```
+
+Full detail: [`docs/architecture.md`](docs/architecture.md).
+
+## Quick start
+
+Two terminals. The backend runs a synthetic feed by default, so the entire demo
+works with **no camera and no heavy setup**.
+
+**Backend**
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate            # Windows: .venv\Scripts\activate
+.venv\Scripts\Activate.ps1          # Windows
+# source .venv/bin/activate         # macOS/Linux
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --port 8080
 ```
-API + docs: http://localhost:8000/docs  ·  starts a synthetic feed, so the whole
-demo works with **no camera and no heavy deps**.
 
-### 2 — Frontend
+**Frontend** (second terminal)
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Open http://localhost:5173 — the dashboard. Vite proxies `/api` → `:8000`, so
-there's nothing else to configure.
 
-### Real video path (optional)
-Install the AI deps (`opencv-python`, `mediapipe`, `scikit-learn`), download the
-res10 model files into `backend/models/` (see its README), then:
+Open **http://localhost:5173**. (Dev proxy forwards `/api` → backend on 8080.)
+
+### Real video (optional)
+Download the res10 model files into `backend/models/` (see its README), then:
 ```bash
-export OBSCURA_VIDEO=/path/to/clip.mp4   # or a webcam index like 0
+# PowerShell
+$env:OBSCURA_VIDEO="C:\path\to\clip.mp4"   # or "0" for a live webcam
+uvicorn app.main:app --port 8080
 ```
-Restart uvicorn and click **Use real feed** in the dashboard's reveal panel.
+Click **Use real feed** in the dashboard. Detection threshold is tunable with
+`OBSCURA_FACE_CONF` (default 0.35; lower catches smaller faces).
 
----
-
-## Run the tests
+## Tests
 ```bash
 cd backend
-pip install pytest
-pytest -q
+python -m pytest -q          # 12 tests, fully isolated
 ```
-12 tests cover the DP mechanism + budget, Shamir reconstruction, AES sealing,
-the tamper-evident audit chain, and a full API smoke test.
+Covers the Laplace mechanism + budget regeneration, Shamir reconstruction, AES
+sealing, tamper detection, and a full API smoke test.
 
-## Deploy (optional)
+## Deploy
 One command, whole app on one port:
 ```bash
-docker compose up --build      # then open http://localhost:8000
+docker compose up --build    # then open http://localhost:8000
 ```
 Or push to Render / Railway / Fly.io — they build the Dockerfile automatically.
-See `DEPLOY.md` for details.
+See [`DEPLOY.md`](DEPLOY.md).
 
-## Quick run (local dev)
-- Windows: double-click `run.bat`
-- Mac/Linux: `./run.sh`
-(Starts backend on 8080 + frontend on 5173. The backend port is set in
-`frontend/vite.config.js`.)
+## Tech stack
+**Backend:** Python · FastAPI · pure-Python differential privacy · Shamir secret
+sharing over a 521-bit prime field · AES-GCM · SHA-256 hash chain · scikit-learn
+autoencoder · OpenCV (res10 DNN + Haar) face redaction · ORB re-identification attacker.
+**Frontend:** React · Vite · a forensic-console UI with a live raw-vs-redacted reveal.
+**Quality:** 12 automated tests · Dockerized · one-command deploy.
 
-## What's real (and tested)
-- DP engine: Laplace mean≈0, stdev≈1.41, ε budget decrements, k-anonymity suppresses.
-- Shamir 2-of-3 over the 521-bit prime field; any 2 shares reconstruct, 1 cannot.
-- AES-GCM seal/unseal; hash-chain audit detects silent edits.
-- Privacy Auditor: real ORB re-ID attempts on blurred faces → 0 successes.
-- Safety Brain: autoencoder reconstruction-error anomaly detection (+ fallbacks).
-- NL assistant: answers count/busy queries, refuses out-of-scope ones.
-- React+Vite frontend builds clean; all panels poll the live API.
+## What's real vs. demo
+All five guarantees are real and tested. The default feed is synthetic so it runs
+anywhere; the real OpenCV camera/video path is implemented and enabled with a video
+source. The on-screen "true count" is a demo-only honesty panel to make the privacy
+gap visible — it would not exist in production.
 
-See `docs/architecture.md` for the full diagram.
+## Repository layout
+```
+backend/
+  app/
+    anonymizer/   edge face redaction, pose, MJPEG, synthetic feed
+    privacy/      differential privacy, re-ID auditor, DP-bound assistant
+    safety/       autoencoder anomaly detection
+    vault/        Shamir secret sharing, AES, hash-chain audit
+    api/          FastAPI routes
+  tests/          pytest suite
+frontend/         React + Vite dashboard
+docs/             architecture, demo script, submission writeup
+Dockerfile · docker-compose.yml · DEPLOY.md
+```
+
+## Team VORTEX
+Raktim Chandra · Nipun Dewangan · Juhi Hai · Pronov Mazumdar
+
+## License
+MIT — see [`LICENSE`](LICENSE).

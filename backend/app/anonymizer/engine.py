@@ -101,6 +101,16 @@ class RealAnonymizer:
         self.zone_id = zone_id
         self.prev_gray = None
         self.net = cv2.dnn.readNetFromCaffe(proto, weights)
+        import os as _os
+        # Confidence threshold for the DNN. Lower catches more (smaller/angled)
+        # faces. Tunable via OBSCURA_FACE_CONF (default 0.35 for crowd footage).
+        self.conf = float(_os.environ.get("OBSCURA_FACE_CONF", "0.35"))
+        # Haar cascade fallback catches faces the DNN misses (e.g. small ones).
+        try:
+            self._haar = cv2.CascadeClassifier(
+                cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        except Exception:
+            self._haar = None
         self._pose = None
         try:
             import mediapipe as mp
@@ -115,26 +125,43 @@ class RealAnonymizer:
         original crop then attempts re-ID on the blurred crop."""
         cv2 = self.cv2
         h, w = frame.shape[:2]
+        boxes = []
+        # --- primary: res10 DNN detector ---
         blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0,
                                      (300, 300), (104, 177, 123))
         self.net.setInput(blob)
         det = self.net.forward()
-        count = 0
         for i in range(det.shape[2]):
-            if det[0, 0, i, 2] < 0.5:
+            if det[0, 0, i, 2] < self.conf:
+                continue
+            x1, y1, x2, y2 = (det[0, 0, i, 3:7] * [w, h, w, h]).astype(int)
+            boxes.append((max(0, x1), max(0, y1), min(w, x2), min(h, y2)))
+        # --- fallback: Haar cascade for smaller / angled faces ---
+        if self._haar is not None:
+            gray_full = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            for (hx, hy, hw_, hh_) in self._haar.detectMultiScale(
+                    gray_full, scaleFactor=1.1, minNeighbors=4, minSize=(24, 24)):
+                boxes.append((hx, hy, hx + hw_, hy + hh_))
+        # --- redact every detected face (strong pixelate + blur) ---
+        count = 0
+        for idx, (x1, y1, x2, y2) in enumerate(boxes):
+            roi = frame[y1:y2, x1:x2]
+            if roi.size == 0:
                 continue
             count += 1
-            x1, y1, x2, y2 = (det[0, 0, i, 3:7] * [w, h, w, h]).astype(int)
-            x1, y1 = max(0, x1), max(0, y1)
-            roi = frame[y1:y2, x1:x2]
-            if roi.size:
-                orig_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-                frame[y1:y2, x1:x2] = cv2.GaussianBlur(roi, (45, 45), 30)
-                if auditor is not None:
-                    fid = f"{self.zone_id}-{i}"
-                    auditor.enroll(fid, orig_gray)
-                    red_gray = cv2.cvtColor(frame[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY)
-                    auditor.attempt_reid(red_gray, fid)
+            orig_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            # pixelate: shrink then upscale (mosaic) + heavy blur = irreversible
+            rh, rw = roi.shape[:2]
+            small = cv2.resize(roi, (max(1, rw // 12), max(1, rh // 12)),
+                               interpolation=cv2.INTER_LINEAR)
+            roi_red = cv2.resize(small, (rw, rh), interpolation=cv2.INTER_NEAREST)
+            roi_red = cv2.GaussianBlur(roi_red, (31, 31), 20)
+            frame[y1:y2, x1:x2] = roi_red
+            if auditor is not None:
+                fid = f"{self.zone_id}-{idx}"
+                auditor.enroll(fid, orig_gray)
+                red_gray = cv2.cvtColor(frame[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY)
+                auditor.attempt_reid(red_gray, fid)
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         motion = 0.0
