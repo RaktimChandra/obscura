@@ -1,6 +1,4 @@
-# OBSCURA — submission writeup
-
-Paste/adapt this for Devpost/Unstop. Replace the links at the bottom.
+# OBSCURA — submission 
 
 ## Inspiration
 The hackathon theme — "Mass Surveillance vs Public Safety" — frames a real
