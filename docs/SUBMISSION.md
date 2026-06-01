@@ -52,8 +52,8 @@ across multiple query types, and a production key-management integration.
 
 ## Links
 - GitHub: https://github.com/RaktimChandra/obscura
-- Demo video: <add link>
-- Live demo (optional): <add link>
+- Demo video: https://drive.google.com/file/d/1n9ycH-6jrDkHfCHeWnuI93_eDsOL4hfi/view?usp=drive_link
+- Live demo (optional): https://obscura-tr8o.onrender.com/
 
 ## Team VORTEX
 Raktim Chandra · Nipun Dewangan · Juhi Hai · Pronov Mazumdar
